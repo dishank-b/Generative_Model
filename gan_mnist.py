@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import glob
+import cv2
 	
 
 def Conv2d(input, output_dim=64, kernel=(5, 5), strides=(2, 2), stddev=0.2, name='conv_2d'):
@@ -119,26 +120,25 @@ class GAN(object):
 
 	def build_model(self, batch_size):
 		with tf.name_scope("Inputs") as scope:
-			self.z = tf.placeholder(tf.float32, shape=[None, 100])
+			self.z = tf.placeholder(tf.float32, shape=[batch_size, 100])
 			self.z_summ = tf.summary.histogram("Noise", self.z)
-			self.x = tf.placeholder(tf.float32, shape=[None, 28,28,1])
+			self.x = tf.placeholder(tf.float32, shape=[batch_size, 28,28,1])
 		
 		with tf.name_scope("Model") as scope:
 			self.gen_img, self.gen_out = self.generator(self.z, batch_size)
 			self.dis_real = self.discriminator(self.x, False)
 			self.dis_fake = self.discriminator(self.gen_out, reuse=True)
-			self.gen_out_summ = tf.summary.image("Generator Image", self.gen_img)
+			print self.dis_real.get_shape(), self.dis_fake.get_shape()
+			self.gen_out_summ = tf.summary.image("Generator Image", self.gen_img, max_outputs=4)
 			self.dis_real_summ = tf.summary.histogram("Discriminator Real", self.dis_real)
 			self.dis_fake_summ = tf.summary.histogram("Discriminator Fake", self.dis_fake)
 
 		with tf.name_scope("Loss") as scope:
-			self.dis_loss = -tf.reduce_mean(tf.log(self.dis_real)) - tf.reduce_mean(tf.log(1-self.dis_fake))
-			self.gen_loss = -tf.reduce_mean(tf.log(self.dis_fake))
-			self.total_loss = self.dis_loss + self.gen_loss
+			self.dis_loss = tf.reduce_mean(-tf.log(self.dis_real) - tf.log(1-self.dis_fake))
+			self.gen_loss = tf.reduce_mean(-tf.log(self.dis_fake))
 
 			self.dis_loss_summ = tf.summary.scalar("Discriminator Loss", self.dis_loss)
 			self.gen_loss_summ = tf.summary.scalar("Generator Loss", self.gen_loss)
-			self.total_loss.summ = tf.summary.scalar("Total Loss", self.total_loss)
 			train_vars = tf.trainable_variables()
 			# print train_vars
 			self.d_vars = [var for var in train_vars if 'D_' in var.name]
@@ -146,7 +146,7 @@ class GAN(object):
 			# print self.d_vars, self.g_vars
 
 	
-	def train_model(self, images, learning_rate, epoch_size, batch_size, z_length, sample_size):
+	def train_model(self, images, learning_rate, epoch_size, batch_size, z_length):
 
 		D_solver = tf.train.AdamOptimizer(learning_rate, beta1=0.1).minimize(self.dis_loss, var_list=self.d_vars)
 		G_solver = tf.train.AdamOptimizer(learning_rate, beta1=0.3).minimize(self.gen_loss, var_list=self.g_vars)
@@ -155,7 +155,7 @@ class GAN(object):
 		self.G_summ = tf.summary.merge([self.z_summ, self.gen_out_summ, self.gen_loss_summ, self.dis_fake_summ])
 		self.D_summ = tf.summary.merge([self.z_summ, self.dis_loss_summ, self.dis_real_summ])
 
-		sample_z = np.random.uniform(-1,1, size=(sample_size, z_length))
+		sample_z = np.random.uniform(-1,1, size=(batch_size, z_length))
 
 		self.sess = tf.Session()
 		self.saver = tf.train.Saver()
@@ -164,7 +164,7 @@ class GAN(object):
 		self.writer.add_graph(self.sess.graph)
 
 		for epoch in range(epoch_size):
-			for itr in xrange(0, len(images), batch_size):
+			for itr in xrange(0, len(images)-batch_size, batch_size):
 				batch_images = images[itr:itr+batch_size]
 				batch_z = np.random.uniform(-1,1,size=(batch_size, z_length))
 
@@ -184,14 +184,18 @@ class GAN(object):
 				self.saver.save(self.sess, "logs/model")
 				print "Checkpoint saved"
 
-				sample_images = sampler(batch_z, batch_size)
-				sample_img_summ = tf.summary.image("Generated Images", sample_images, max_outputs=5)
-				self.writer.add_summary(self.sess.run([sample_images_summ],{self.z: batch_z, self.x:batch_images}))
+				generated_images = self.sess.run([self.gen_img], {self.z : sample_z})
+				all_images = np.array(generated_images[0])
+				for i in range(5):
+					image = 255.0*all_images[i*5]
+					cv2.imwrite("./logs/gen_images/img"+str(i)+"_"+str(epoch)+".jpg", image)
+
+
 
 
 images = np.load("./dataset/trainingSet/mnist_data_28*28*1_0to1values.npy")
 print "Data Loaded"
 print images.shape
 gan_model = GAN()
-gan_model.build_model(batch_size=64)
-gan_model.train_model(images = images,learning_rate=0.0002, epoch_size=100, batch_size=64, z_length=100, sample_size=10)
+gan_model.build_model(batch_size=128)
+gan_model.train_model(images = images,learning_rate=0.0002, epoch_size=100, batch_size=128, z_length=100)
