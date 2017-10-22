@@ -69,7 +69,7 @@ class GAN(object):
 	def __init__(self):
 		self.weights_bias=[]
 
-	def generator(self, z):
+	def generator(self, z, batch_size):
 		with tf.name_scope("generator") as sc:
 			with tf.variable_scope("gen") as var_scope:
 				G_1 = Dense(z, output_dim=1024, name='G_hidden1') # [-1, 1024]
@@ -79,10 +79,10 @@ class GAN(object):
 				G_bn2 = BatchNormalization(G_2, name='G_hidden2')        
 				G_h2 = tf.nn.relu(G_bn2)
 				G_r2 = tf.reshape(G_h2, [-1, 7, 7, 128])
-				G_conv3 = Deconv2d(G_r2, output_dim=64, batch_size=-1, name='G_hidden3')
+				G_conv3 = Deconv2d(G_r2, output_dim=64, batch_size=batch_size, name='G_hidden3')
 				G_bn3 = BatchNormalization(G_conv3, name='G_hidden3')        
 				G_h3 = tf.nn.relu(G_bn3)
-				G_conv4 = Deconv2d(G_h3, output_dim=1, batch_size=-1, name='G_hidden4')
+				G_conv4 = Deconv2d(G_h3, output_dim=1, batch_size=batch_size, name='G_hidden4')
 				G_r4 = tf.reshape(G_conv4, [-1, 784])
 				return G_conv4, tf.nn.sigmoid(G_r4)
 
@@ -95,22 +95,31 @@ class GAN(object):
 				else:
 					D_reshaped = tf.reshape(x, [-1, 28, 28, 1])
 					D_conv1 = Conv2d(D_reshaped, output_dim=64, name='D_hidden1')
+				
+				# D_h1 = LeakyReLU(D_conv1) # [-1, 28, 28, 64]
+				# D_conv2 = Conv2d(D_h1, output_dim=128, name='D_hidden2')
+				# D_h2 = LeakyReLU(D_conv2) # [-1, 28, 28, 128]
+				# D_conv3 = Conv2d(D_h2, output_dim=256, name='D_hidden3')
+				# D_h3 = LeakyReLU(D_conv3) # [-1, 28, 28, 128]
+				# D_r3 = tf.reshape(D_h3, [-1, int(np.prod(D_h3.get_shape()[1:]))])
+				# D_h4 = Dense(D_r3, output_dim=1, name='D_hidden4') # [-1, 1]
+				# return tf.nn.sigmoid(D_h4)
+
 				D_h1 = LeakyReLU(D_conv1) # [-1, 28, 28, 64]
 				D_conv2 = Conv2d(D_h1, output_dim=128, name='D_hidden2')
 				D_h2 = LeakyReLU(D_conv2) # [-1, 28, 28, 128]
 				D_r2 = tf.reshape(D_h2, [-1, int(np.prod(D_h2.get_shape()[1:]))])
 				D_h3 = Dense(D_r2, output_dim=1, name='D_hidden3') # [-1, 1]
-				# print D_h3.get_shape(), D_r3.get_shape()
 				return tf.nn.sigmoid(D_h3)
 
-	def build_model(self):
+	def build_model(self, batch_size):
 		with tf.name_scope("Inputs") as scope:
 			self.z = tf.placeholder(tf.float32, shape=[None, 100])
 			self.z_summ = tf.summary.histogram("Noise", self.z)
 			self.x = tf.placeholder(tf.float32, shape=[None, 28,28,1])
 		
 		with tf.name_scope("Model") as scope:
-			self.gen_img, self.gen_out = self.generator(self.z)
+			self.gen_img, self.gen_out = self.generator(self.z, batch_size)
 			self.dis_real = self.discriminator(self.x, False)
 			self.dis_fake = self.discriminator(self.gen_out, reuse=True)
 			print self.dis_real.get_shape(), self.dis_fake.get_shape()
@@ -154,7 +163,7 @@ class GAN(object):
 				_, D_summary, D_loss = self.sess.run([D_solver, self.D_summ, self.dis_loss], {self.z: batch_z, self.x:batch_images})
 				self.writer.add_summary(D_summary, itr)
 
-				batch_z = np.random.uniform(-1,1, size=(batch_size, z_length))
+				# batch_z = np.random.uniform(-1,1, size=(batch_size, z_length))
 
 				_, G_summary, G_loss = self.sess.run([G_solver, self.G_summ, self.gen_loss], {self.z : batch_z, self.x:batch_images})
 				self.writer.add_summary(G_summary, itr)
@@ -167,28 +176,28 @@ class GAN(object):
 				self.saver.save(self.sess, "logs/model")
 				print "Checkpoint saved"
 
-				sample_z = np.random.uniform(-1,1,size=(128, z_length))
+				sample_z = np.random.uniform(-1,1,size=(550, z_length))
 				generated_images = self.sess.run([self.gen_img], {self.z : sample_z})
 				all_images = np.array(generated_images[0])
 				
-				for i in range(5):
+				for i in range(10):
 					image_grid_horizontal = 255.0*all_images[i*25]
-					for j in range(5):
-						image = 255.0*all_images[(j+1)*5]
+					for j in range(10):
+						image = 255.0*all_images[i*25+(j+1)*5]
 						image_grid_horizontal = np.hstack((image_grid_horizontal, image))
 					if i==0:
 						image_grid_vertical = image_grid_horizontal
 					else:
-						image_grid_vertical = np.vstack(image_grid_vertical, image_grid_horizontal)
+						image_grid_vertical = np.vstack((image_grid_vertical, image_grid_horizontal))
 
-				cv2.imwrite("./logs/gen_images/img_"str(epoch)+".jpg", image_grid_vertical)
-
-
+				cv2.imwrite("./logs/gen_images/img_"+str(epoch)+".jpg", image_grid_vertical)
 
 
-images = np.load("./dataset/trainingSet/mnist_data_28*28*1_0to1values.npy")
+
+
+images = np.load("./mnist_dataset/trainingSet/mnist_data_28*28*1_0to1values.npy")
 print "Data Loaded"
 print images.shape
 gan_model = GAN()
-# gan_model.build_model(batch_size=128)
-gan_model.train_model(images = images,learning_rate=0.00001, epoch_size=100, batch_size=128, z_length=100)
+gan_model.build_model(batch_size=128)
+gan_model.train_model(images = images,learning_rate=0.0002, epoch_size=200, batch_size=128, z_length=100)
