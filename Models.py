@@ -1,10 +1,15 @@
 import tensorflow as tf
 import numpy as np
 import cv2
+from Ops import *
 
 class GAN(object):
 	"""Model for GAN"""
-	def __init__(self):
+	def __init__(self, model_path):
+		self.model_path = model_path
+		self.graph_path = model_path+"/tf_graph"
+		self.results_path = model_path+"/results"
+		self.save_path = model_path+"/saved_model"
 		self.dis_loss = 0.0
 		self.gen_loss = 0.0
 		self.dis_fake_loss = 0.0
@@ -63,7 +68,7 @@ class GAN(object):
 	def Train_Model(self,inputs, learning_rate=1e-5, batch_size=64, epoch_size=100):
 		with tf.name_scope("Optimizers") as scope:
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS) # Important thing when using batch_norm to update population mean and variance
-    		with tf.control_dependencies(update_ops):               # If doesn't want to use this then, use None in update_collection param of batch_norm	
+    		with tf.control_dependencies(update_ops):               # If doesn't want to use this then, use None in update_collection param of batch_norm	s
 				D_solver = tf.train.AdamOptimizer(learning_rate, beta1=0.1).minimize(self.dis_loss, var_list=self.d_vars)
 				G_solver = tf.train.AdamOptimizer(learning_rate, beta1=0.3).minimize(self.gen_loss, var_list=self.g_vars)
 
@@ -73,7 +78,7 @@ class GAN(object):
 		self.sess = tf.Session()
 		self.saver = tf.train.Saver()
 		self.sess.run(tf.global_variables_initializer())
-		self.writer = tf.summary.FileWriter("./logs/graphs")
+		self.writer = tf.summary.FileWriter(self.graph_path)
 		self.writer.add_graph(self.sess.graph)
 
 		with tf.name_scope("Training") as scope:
@@ -97,7 +102,7 @@ class GAN(object):
 						print "Generator Loss: ", G_outputs[2]
 
 				if epoch%5==0:
-					self.saver.save(self.sess, "logs/model")
+					self.saver.save(self.sess, self.save_path+"/checkpoint")
 					print "Checkpoint saved"
 
 					sample_z = np.random.uniform(-1,1,size=(batch_size, 100))
@@ -114,7 +119,7 @@ class GAN(object):
 						else:
 							image_grid_vertical = np.vstack((image_grid_vertical, image_grid_horizontal))
 
-					cv2.imwrite("./logs/gen_images/img_"+str(epoch)+".jpg", image_grid_vertical)
+					cv2.imwrite(self.results_path +"/img_"+str(epoch)+".jpg", image_grid_vertical)
 
 
 
